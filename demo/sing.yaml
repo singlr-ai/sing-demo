@@ -1,0 +1,46 @@
+name: demo
+description: "Outline wiki — open-source knowledge base with Postgres and Redis"
+
+resources:
+  cpu: 2
+  memory: 4GB
+  disk: 20GB
+
+image: ubuntu/24.04
+
+runtimes:
+  node: "22"
+
+git:
+  name: ${GIT_NAME}
+  email: ${GIT_EMAIL}
+  auth: token
+
+repos:
+  - url: https://github.com/outline/outline.git
+    path: outline
+
+services:
+  postgres:
+    image: postgres:16
+    ports: [5432]
+    environment:
+      POSTGRES_DB: outline
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+    volumes:
+      - "pgdata:/var/lib/postgresql/data"
+  redis:
+    image: redis:7
+    ports: [6379]
+
+ssh:
+  user: dev
+  authorized_keys:
+    - ${SSH_PUBLIC_KEY}
+
+agent:
+  type: claude-code
+  auto_snapshot: true
+  auto_branch: true
+
