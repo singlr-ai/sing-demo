@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+export PATH="$HOME/.local/bin:$PATH"
+corepack enable --install-directory ~/.local/bin yarn
+
 cd ~/workspace/outline
 
 echo "==> Outline Dev Environment Setup"
@@ -10,9 +16,10 @@ echo
 SECRET_KEY=$(openssl rand -hex 32)
 UTILS_SECRET=$(openssl rand -hex 32)
 
-# Defaults for our Podman-based setup
-DB_USER="outline"
-DB_PASS="outline"
+# Defaults — match sing.yaml Postgres config (superuser=dev, db=outline)
+PG_ADMIN="dev"
+DB_USER="dev"
+DB_PASS="dev"
 DB_NAME="outline"
 DB_HOST="localhost"
 DB_PORT="5432"
@@ -22,14 +29,13 @@ PORT="3000"
 
 # Let user customize if they want
 read -rp "  App port [${PORT}]: " input && PORT="${input:-$PORT}"
-read -rp "  Postgres user [${DB_USER}]: " input && DB_USER="${input:-$DB_USER}"
-read -rp "  Postgres password [${DB_PASS}]: " input && DB_PASS="${input:-$DB_PASS}"
 read -rp "  Database name [${DB_NAME}]: " input && DB_NAME="${input:-$DB_NAME}"
 
 echo
-echo "==> Creating Postgres user and database..."
-podman exec postgres psql -U postgres -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" 2>/dev/null || echo "    User already exists"
-podman exec postgres psql -U postgres -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" 2>/dev/null || echo "    Database already exists"
+echo "==> Ensuring database exists..."
+podman exec postgres psql -U "${PG_ADMIN}" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 \
+  || podman exec postgres psql -U "${PG_ADMIN}" -d postgres -c "CREATE DATABASE ${DB_NAME};"
+echo "    Database '${DB_NAME}' ready"
 
 echo "==> Generating .env..."
 cat > .env << EOF
@@ -60,7 +66,11 @@ EOF
 echo "    .env written"
 
 echo "==> Installing Node.js dependencies..."
-yarn install --frozen-lockfile
+export COREPACK_ENABLE_AUTO_PIN=0
+yarn install --immutable
+
+echo "==> Building Outline (required before migrations)..."
+yarn build
 
 echo "==> Running database migrations..."
 yarn db:create --env=development 2>/dev/null || true
